@@ -1,6 +1,6 @@
 matching_groups:
   - /users/transaction\.json
-  - /users/.+\.json
+  - /users/[0-9]+\.json
   - /upload/.+\.jpg
   - /items/.+\.json
   - /transactions/.+\.png
