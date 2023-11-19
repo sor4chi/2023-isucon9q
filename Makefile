@@ -4,7 +4,7 @@ NGINX_ACCESS_LOG:=/var/log/nginx/access.ndjson
 NGINX_CONF:=/etc/nginx
 MYSQL_SLOW_LOG:=/var/log/mysql/mysql-slow.log
 MYSQL_CONF:=/etc/mysql
-APP:=/home/isucon/isucari/webapp/golang
+APP:=/home/isucon/isucari/webapp/go
 SERVICE:=isucari.golang.service
 
 .PHONY: rotate-all
