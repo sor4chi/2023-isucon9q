@@ -281,6 +281,7 @@ func init() {
 }
 
 func main() {
+	APIShipmentStatusCache = map[string]string{}
 	runtime.SetBlockProfileRate(1)
 	runtime.SetMutexProfileFraction(1)
 	go func() {
@@ -516,6 +517,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func postInitialize(w http.ResponseWriter, r *http.Request) {
+	APIShipmentStatusCache = map[string]string{}
 	ri := reqInitialize{}
 
 	err := json.NewDecoder(r.Body).Decode(&ri)
@@ -934,6 +936,8 @@ func getUserItems(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rui)
 }
 
+var APIShipmentStatusCache = map[string]string{}
+
 func getTransactions(w http.ResponseWriter, r *http.Request) {
 
 	user, errCode, errMsg := getUser(r)
@@ -1139,19 +1143,25 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 				tx.Rollback()
 				return
 			}
-			ssr, err := APIShipmentStatus(getShipmentServiceURL(), &APIShipmentStatusReq{
-				ReserveID: shipping.ReserveID,
-			})
-			if err != nil {
-				log.Print(err)
-				outputErrorMsg(w, http.StatusInternalServerError, "failed to request to shipment service")
-				tx.Rollback()
-				return
-			}
+			if v, ok := APIShipmentStatusCache[shipping.ReserveID]; ok {
+				itemDetail.ShippingStatus = v
+			} else {
+				ssr, err := APIShipmentStatus(getShipmentServiceURL(), &APIShipmentStatusReq{
+					ReserveID: shipping.ReserveID,
+				})
+				if err != nil {
+					log.Print(err)
+					outputErrorMsg(w, http.StatusInternalServerError, "failed to request to shipment service")
+					tx.Rollback()
+					return
+				}
 
+				itemDetail.ShippingStatus = ssr.Status
+
+				APIShipmentStatusCache[shipping.ReserveID] = ssr.Status
+			}
 			itemDetail.TransactionEvidenceID = transactionEvidence.ID
 			itemDetail.TransactionEvidenceStatus = transactionEvidence.Status
-			itemDetail.ShippingStatus = ssr.Status
 		}
 
 		itemDetails = append(itemDetails, itemDetail)
