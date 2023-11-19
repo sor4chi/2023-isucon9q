@@ -1011,17 +1011,22 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 
 	itemDetails := []ItemDetail{}
 	tmpSellerIDs := []int64{}
+	tmpBuyerIDs := []int64{}
 	tmpCategoryIDs := []int{}
 	sellerMap := map[int64]UserSimple{}
 	categoryMap := map[int]Category{}
+	buyerMap := map[int64]UserSimple{}
 
 	for _, item := range items {
 		tmpSellerIDs = append(tmpSellerIDs, item.SellerID)
 		tmpCategoryIDs = append(tmpCategoryIDs, item.CategoryID)
+		if item.BuyerID != 0 {
+			tmpBuyerIDs = append(tmpBuyerIDs, item.BuyerID)
+		}
 	}
 
 	wg := sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		if len(tmpSellerIDs) > 0 {
@@ -1046,6 +1051,21 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			}
 			for _, category := range categories {
 				categoryMap[category.ID] = category
+			}
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if len(tmpBuyerIDs) > 0 {
+			buyers, err := getUserSimplesByIDs(dbx, tmpBuyerIDs)
+			if err != nil {
+				outputErrorMsg(w, http.StatusNotFound, "buyer not found")
+				tx.Rollback()
+				return
+			}
+			for _, buyer := range buyers {
+				buyerMap[buyer.ID] = buyer
 			}
 		}
 	}()
@@ -1076,12 +1096,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if item.BuyerID != 0 {
-			buyer, err := getUserSimpleByID(tx, item.BuyerID)
-			if err != nil {
-				outputErrorMsg(w, http.StatusNotFound, "buyer not found")
-				tx.Rollback()
-				return
-			}
+			buyer := buyerMap[item.BuyerID]
 			itemDetail.BuyerID = item.BuyerID
 			itemDetail.Buyer = &buyer
 		}
