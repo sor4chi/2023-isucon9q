@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "net/http/pprof"
@@ -758,27 +759,37 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 		categoryIDs = append(categoryIDs, item.CategoryID)
 	}
 
-	if len(sellerIDs) > 0 {
-		sellers, err := getUserSimplesByIDs(dbx, sellerIDs)
-		if err != nil {
-			outputErrorMsg(w, http.StatusNotFound, "seller not found")
-			return
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if len(sellerIDs) > 0 {
+			sellers, err := getUserSimplesByIDs(dbx, sellerIDs)
+			if err != nil {
+				outputErrorMsg(w, http.StatusNotFound, "seller not found")
+				return
+			}
+			for _, seller := range sellers {
+				sellerMap[seller.ID] = seller
+			}
 		}
-		for _, seller := range sellers {
-			sellerMap[seller.ID] = seller
-		}
-	}
+	}()
 
-	if len(categoryIDs) > 0 {
-		categories, err := getCategoriesByIDs(dbx, categoryIDs)
-		if err != nil {
-			outputErrorMsg(w, http.StatusNotFound, "category not found")
-			return
+	go func() {
+		defer wg.Done()
+		if len(categoryIDs) > 0 {
+			categories, err := getCategoriesByIDs(dbx, categoryIDs)
+			if err != nil {
+				outputErrorMsg(w, http.StatusNotFound, "category not found")
+				return
+			}
+			for _, category := range categories {
+				categoryMap[category.ID] = category
+			}
 		}
-		for _, category := range categories {
-			categoryMap[category.ID] = category
-		}
-	}
+	}()
+
+	wg.Wait()
 
 	for _, item := range items {
 		seller := sellerMap[item.SellerID]
