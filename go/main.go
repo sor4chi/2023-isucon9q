@@ -67,6 +67,9 @@ var (
 	store     sessions.Store
 )
 
+var userCache = map[int64]User{}
+var userCacheLock = sync.RWMutex{}
+
 type Config struct {
 	Name string `json:"name" db:"name"`
 	Val  string `json:"val" db:"val"`
@@ -285,6 +288,7 @@ var holeCategoryMapLock = sync.RWMutex{}
 
 func main() {
 	holeCategoryMap = map[int]Category{}
+	userCache = map[int64]User{}
 	runtime.SetBlockProfileRate(1)
 	runtime.SetMutexProfileFraction(1)
 	go func() {
@@ -395,6 +399,13 @@ func getUser(r *http.Request) (user User, errCode int, errMsg string) {
 		return user, http.StatusNotFound, "no session"
 	}
 
+	userCacheLock.RLock()
+	user, ok = userCache[userID.(int64)]
+	userCacheLock.RUnlock()
+	if ok {
+		return user, http.StatusOK, ""
+	}
+
 	err := dbx.Get(&user, "SELECT * FROM `users` WHERE `id` = ?", userID)
 	if err == sql.ErrNoRows {
 		return user, http.StatusNotFound, "user not found"
@@ -404,18 +415,36 @@ func getUser(r *http.Request) (user User, errCode int, errMsg string) {
 		return user, http.StatusInternalServerError, "db error"
 	}
 
+	userCacheLock.Lock()
+	userCache[userID.(int64)] = user
+	userCacheLock.Unlock()
+
 	return user, http.StatusOK, ""
 }
 
 func getUserSimpleByID(q sqlx.Queryer, userID int64) (userSimple UserSimple, err error) {
 	user := User{}
+	userCacheLock.RLock()
+	user, ok := userCache[userID]
+	userCacheLock.RUnlock()
+	if ok {
+		userSimple.ID = user.ID
+		userSimple.AccountName = user.AccountName
+		userSimple.NumSellItems = user.NumSellItems
+		return userSimple, err
+	}
 	err = sqlx.Get(q, &user, "SELECT * FROM `users` WHERE `id` = ?", userID)
 	if err != nil {
 		return userSimple, err
 	}
+	userCacheLock.Lock()
+	userCache[userSimple.ID] = user
+	userCacheLock.Unlock()
+
 	userSimple.ID = user.ID
 	userSimple.AccountName = user.AccountName
 	userSimple.NumSellItems = user.NumSellItems
+
 	return userSimple, err
 }
 
@@ -525,6 +554,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 
 func postInitialize(w http.ResponseWriter, r *http.Request) {
 	holeCategoryMap = map[int]Category{}
+	userCache = map[int64]User{}
 	ri := reqInitialize{}
 
 	err := json.NewDecoder(r.Body).Decode(&ri)
@@ -2258,6 +2288,10 @@ func postSell(w http.ResponseWriter, r *http.Request) {
 		outputErrorMsg(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	userCacheLock.Lock()
+	delete(userCache, user.ID)
+	userCacheLock.Unlock()
+
 	tx.Commit()
 
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
@@ -2358,6 +2392,10 @@ func postBump(w http.ResponseWriter, r *http.Request) {
 		outputErrorMsg(w, http.StatusInternalServerError, "db error")
 		return
 	}
+
+	userCacheLock.Lock()
+	delete(userCache, user.ID)
+	userCacheLock.Unlock()
 
 	err = tx.Get(&targetItem, "SELECT * FROM `items` WHERE `id` = ?", itemID)
 	if err != nil {
