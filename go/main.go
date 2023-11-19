@@ -1013,9 +1013,11 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 	tmpSellerIDs := []int64{}
 	tmpBuyerIDs := []int64{}
 	tmpCategoryIDs := []int{}
+	tmpTransactionEvidenceIDs := []int64{}
 	sellerMap := map[int64]UserSimple{}
 	categoryMap := map[int]Category{}
 	buyerMap := map[int64]UserSimple{}
+	transactionEvidenceMap := map[int64]TransactionEvidence{}
 
 	for _, item := range items {
 		tmpSellerIDs = append(tmpSellerIDs, item.SellerID)
@@ -1023,10 +1025,11 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		if item.BuyerID != 0 {
 			tmpBuyerIDs = append(tmpBuyerIDs, item.BuyerID)
 		}
+		tmpTransactionEvidenceIDs = append(tmpTransactionEvidenceIDs, item.ID)
 	}
 
 	wg := sync.WaitGroup{}
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		if len(tmpSellerIDs) > 0 {
@@ -1070,6 +1073,29 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	generatedSQL, params, err := sqlx.In("SELECT * FROM `transaction_evidences` WHERE `item_id` IN (?)", tmpTransactionEvidenceIDs)
+	if err != nil {
+		outputErrorMsg(w, http.StatusInternalServerError, "db error")
+		tx.Rollback()
+		return
+	}
+
+	go func() {
+		defer wg.Done()
+		if len(tmpTransactionEvidenceIDs) > 0 {
+			transactionEvidences := []TransactionEvidence{}
+			err := sqlx.Select(tx, &transactionEvidences, generatedSQL, params...)
+			if err != nil {
+				outputErrorMsg(w, http.StatusNotFound, "db error")
+				tx.Rollback()
+				return
+			}
+			for _, transactionEvidence := range transactionEvidences {
+				transactionEvidenceMap[transactionEvidence.ItemID] = transactionEvidence
+			}
+		}
+	}()
+
 	wg.Wait()
 
 	for _, item := range items {
@@ -1101,15 +1127,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			itemDetail.Buyer = &buyer
 		}
 
-		transactionEvidence := TransactionEvidence{}
-		err = tx.Get(&transactionEvidence, "SELECT * FROM `transaction_evidences` WHERE `item_id` = ?", item.ID)
-		if err != nil && err != sql.ErrNoRows {
-			// It's able to ignore ErrNoRows
-			log.Print(err)
-			outputErrorMsg(w, http.StatusInternalServerError, "db error")
-			tx.Rollback()
-			return
-		}
+		transactionEvidence := transactionEvidenceMap[item.ID]
 
 		if transactionEvidence.ID > 0 {
 			shipping := Shipping{}
