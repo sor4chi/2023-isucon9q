@@ -749,22 +749,22 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	itemSimples := []ItemSimple{}
-	sellerIDs := []int64{}
-	categoryIDs = []int{}
+	tmpSellerIDs := []int64{}
+	tmpCategoryIDs := []int{}
 	sellerMap := map[int64]UserSimple{}
 	categoryMap := map[int]Category{}
 
 	for _, item := range items {
-		sellerIDs = append(sellerIDs, item.SellerID)
-		categoryIDs = append(categoryIDs, item.CategoryID)
+		tmpSellerIDs = append(tmpSellerIDs, item.SellerID)
+		tmpCategoryIDs = append(tmpCategoryIDs, item.CategoryID)
 	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		if len(sellerIDs) > 0 {
-			sellers, err := getUserSimplesByIDs(dbx, sellerIDs)
+		if len(tmpSellerIDs) > 0 {
+			sellers, err := getUserSimplesByIDs(dbx, tmpSellerIDs)
 			if err != nil {
 				outputErrorMsg(w, http.StatusNotFound, "seller not found")
 				return
@@ -777,8 +777,8 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer wg.Done()
-		if len(categoryIDs) > 0 {
-			categories, err := getCategoriesByIDs(dbx, categoryIDs)
+		if len(tmpCategoryIDs) > 0 {
+			categories, err := getCategoriesByIDs(dbx, tmpCategoryIDs)
 			if err != nil {
 				outputErrorMsg(w, http.StatusNotFound, "category not found")
 				return
