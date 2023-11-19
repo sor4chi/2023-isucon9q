@@ -280,11 +280,12 @@ func init() {
 	))
 }
 
-var categoryMap = map[int]Category{}
+var holeCategoryMap = map[int]Category{}
+var holeCategoryMapLock = sync.RWMutex{}
 
 func main() {
 	APIShipmentStatusCache = map[string]string{}
-	categoryMap = map[int]Category{}
+	holeCategoryMap = map[int]Category{}
 	runtime.SetBlockProfileRate(1)
 	runtime.SetMutexProfileFraction(1)
 	go func() {
@@ -440,7 +441,9 @@ func getUserSimplesByIDs(q sqlx.Queryer, userIDs []int64) (userSimples []UserSim
 }
 
 func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err error) {
-	category, ok := categoryMap[categoryID]
+	holeCategoryMapLock.RLock()
+	category, ok := holeCategoryMap[categoryID]
+	holeCategoryMapLock.RUnlock()
 	if !ok {
 		return category, fmt.Errorf("category not found")
 	}
@@ -460,7 +463,9 @@ func getCategoriesByIDs(q sqlx.Queryer, categoryIDs []int) (categories []Categor
 	}
 	categories = []Category{}
 	for _, categoryID := range categoryIDs {
-		if category, ok := categoryMap[categoryID]; ok {
+		holeCategoryMapLock.RLock()
+		if category, ok := holeCategoryMap[categoryID]; ok {
+			holeCategoryMapLock.RUnlock()
 			categories = append(categories, category)
 		}
 	}
@@ -521,7 +526,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 
 func postInitialize(w http.ResponseWriter, r *http.Request) {
 	APIShipmentStatusCache = map[string]string{}
-	categoryMap = map[int]Category{}
+	holeCategoryMap = map[int]Category{}
 	ri := reqInitialize{}
 
 	err := json.NewDecoder(r.Body).Decode(&ri)
@@ -567,7 +572,9 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, category := range categories {
-		categoryMap[category.ID] = category
+		holeCategoryMapLock.Lock()
+		holeCategoryMap[category.ID] = category
+		holeCategoryMapLock.Unlock()
 	}
 
 	res := resInitialize{
@@ -693,7 +700,7 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 
 	var categoryIDs = []int{}
 
-	for _, c := range categoryMap {
+	for _, c := range holeCategoryMap {
 		if c.ParentID == rootCategory.ID {
 			categoryIDs = append(categoryIDs, c.ID)
 		}
@@ -2338,7 +2345,7 @@ func getSettings(w http.ResponseWriter, r *http.Request) {
 
 	categories := []Category{}
 
-	for _, c := range categoryMap {
+	for _, c := range holeCategoryMap {
 		categories = append(categories, c)
 	}
 
