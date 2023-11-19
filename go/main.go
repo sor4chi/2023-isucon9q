@@ -964,11 +964,10 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tx := dbx.MustBegin()
 	items := []Item{}
 	if itemID > 0 && createdAt > 0 {
 		// paging
-		err := tx.Select(&items,
+		err := dbx.Select(&items,
 			"SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?,?,?,?,?) AND (`created_at` < ?  OR (`created_at` <= ? AND `id` < ?)) ORDER BY `created_at` DESC, `id` DESC LIMIT ?",
 			user.ID,
 			user.ID,
@@ -985,12 +984,11 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Print(err)
 			outputErrorMsg(w, http.StatusInternalServerError, "db error")
-			tx.Rollback()
 			return
 		}
 	} else {
 		// 1st page
-		err := tx.Select(&items,
+		err := dbx.Select(&items,
 			"SELECT * FROM `items` WHERE (`seller_id` = ? OR `buyer_id` = ?) AND `status` IN (?,?,?,?,?) ORDER BY `created_at` DESC, `id` DESC LIMIT ?",
 			user.ID,
 			user.ID,
@@ -1004,7 +1002,6 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Print(err)
 			outputErrorMsg(w, http.StatusInternalServerError, "db error")
-			tx.Rollback()
 			return
 		}
 	}
@@ -1064,7 +1061,6 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			buyers, err := getUserSimplesByIDs(dbx, tmpBuyerIDs)
 			if err != nil {
 				outputErrorMsg(w, http.StatusNotFound, "buyer not found")
-				tx.Rollback()
 				return
 			}
 			for _, buyer := range buyers {
@@ -1076,7 +1072,6 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 	generatedSQL, params, err := sqlx.In("SELECT * FROM `transaction_evidences` WHERE `item_id` IN (?)", tmpTransactionEvidenceIDs)
 	if err != nil {
 		outputErrorMsg(w, http.StatusInternalServerError, "db error")
-		tx.Rollback()
 		return
 	}
 
@@ -1084,10 +1079,9 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		defer wg.Done()
 		if len(tmpTransactionEvidenceIDs) > 0 {
 			transactionEvidences := []TransactionEvidence{}
-			err := sqlx.Select(tx, &transactionEvidences, generatedSQL, params...)
+			err := sqlx.Select(dbx, &transactionEvidences, generatedSQL, params...)
 			if err != nil {
 				outputErrorMsg(w, http.StatusNotFound, "db error")
-				tx.Rollback()
 				return
 			}
 			for _, transactionEvidence := range transactionEvidences {
@@ -1097,6 +1091,8 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	wg.Wait()
+
+	tx := dbx.MustBegin()
 
 	for _, item := range items {
 		seller := sellerMap[item.SellerID]
