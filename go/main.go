@@ -280,8 +280,11 @@ func init() {
 	))
 }
 
+var categoryMap = map[int]Category{}
+
 func main() {
 	APIShipmentStatusCache = map[string]string{}
+	categoryMap = map[int]Category{}
 	runtime.SetBlockProfileRate(1)
 	runtime.SetMutexProfileFraction(1)
 	go func() {
@@ -437,7 +440,10 @@ func getUserSimplesByIDs(q sqlx.Queryer, userIDs []int64) (userSimples []UserSim
 }
 
 func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err error) {
-	err = sqlx.Get(q, &category, "SELECT * FROM `categories` WHERE `id` = ?", categoryID)
+	category, ok := categoryMap[categoryID]
+	if !ok {
+		return category, fmt.Errorf("category not found")
+	}
 	if category.ParentID != 0 {
 		parentCategory, err := getCategoryByID(q, category.ParentID)
 		if err != nil {
@@ -453,13 +459,10 @@ func getCategoriesByIDs(q sqlx.Queryer, categoryIDs []int) (categories []Categor
 		return categories, err
 	}
 	categories = []Category{}
-	sql, params, err := sqlx.In("SELECT * FROM `categories` WHERE `id` IN (?)", categoryIDs)
-	if err != nil {
-		return categories, err
-	}
-	err = sqlx.Select(q, &categories, sql, params...)
-	if err != nil {
-		return categories, err
+	for _, categoryID := range categoryIDs {
+		if category, ok := categoryMap[categoryID]; ok {
+			categories = append(categories, category)
+		}
 	}
 	parentIDs := []int{}
 	for _, category := range categories {
@@ -518,6 +521,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 
 func postInitialize(w http.ResponseWriter, r *http.Request) {
 	APIShipmentStatusCache = map[string]string{}
+	categoryMap = map[int]Category{}
 	ri := reqInitialize{}
 
 	err := json.NewDecoder(r.Body).Decode(&ri)
@@ -554,6 +558,16 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		outputErrorMsg(w, http.StatusInternalServerError, "db error")
 		return
+	}
+	var categories []Category
+	err = dbx.Select(&categories, "SELECT * FROM `categories`")
+	if err != nil {
+		log.Print(err)
+		outputErrorMsg(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	for _, category := range categories {
+		categoryMap[category.ID] = category
 	}
 
 	res := resInitialize{
@@ -677,12 +691,12 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var categoryIDs []int
-	err = dbx.Select(&categoryIDs, "SELECT id FROM `categories` WHERE parent_id=?", rootCategory.ID)
-	if err != nil {
-		log.Print(err)
-		outputErrorMsg(w, http.StatusInternalServerError, "db error")
-		return
+	var categoryIDs = []int{}
+
+	for _, c := range categoryMap {
+		if c.ParentID == rootCategory.ID {
+			categoryIDs = append(categoryIDs, c.ID)
+		}
 	}
 
 	query := r.URL.Query()
@@ -2324,12 +2338,10 @@ func getSettings(w http.ResponseWriter, r *http.Request) {
 
 	categories := []Category{}
 
-	err := dbx.Select(&categories, "SELECT * FROM `categories`")
-	if err != nil {
-		log.Print(err)
-		outputErrorMsg(w, http.StatusInternalServerError, "db error")
-		return
+	for _, c := range categoryMap {
+		categories = append(categories, c)
 	}
+
 	ress.Categories = categories
 
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
