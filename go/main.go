@@ -1158,7 +1158,9 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 
 				itemDetail.ShippingStatus = ssr.Status
 
-				APIShipmentStatusCache[shipping.ReserveID] = ssr.Status
+				if ssr.Status == ShippingsStatusDone {
+					APIShipmentStatusCache[shipping.ReserveID] = ssr.Status
+				}
 			}
 			itemDetail.TransactionEvidenceID = transactionEvidence.ID
 			itemDetail.TransactionEvidenceStatus = transactionEvidence.Status
