@@ -58,8 +58,6 @@ const (
 
 	ItemsPerPage        = 48
 	TransactionsPerPage = 10
-
-	BcryptCost = 10
 )
 
 var (
@@ -2250,7 +2248,7 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	if err != nil {
 		log.Print(err)
 
