@@ -414,6 +414,26 @@ func getUserSimpleByID(q sqlx.Queryer, userID int64) (userSimple UserSimple, err
 	return userSimple, err
 }
 
+func getUserSimplesByIDs(q sqlx.Queryer, userIDs []int64) (userSimples []UserSimple, err error) {
+	users := []User{}
+	sql, params, err := sqlx.In("SELECT * FROM `users` WHERE `id` IN (?)", userIDs)
+	if err != nil {
+		return userSimples, err
+	}
+	err = sqlx.Select(q, &users, sql, params...)
+	if err != nil {
+		return userSimples, err
+	}
+	for _, user := range users {
+		userSimples = append(userSimples, UserSimple{
+			ID:           user.ID,
+			AccountName:  user.AccountName,
+			NumSellItems: user.NumSellItems,
+		})
+	}
+	return userSimples, err
+}
+
 func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err error) {
 	err = sqlx.Get(q, &category, "SELECT * FROM `categories` WHERE `id` = ?", categoryID)
 	if category.ParentID != 0 {
@@ -693,17 +713,31 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	itemSimples := []ItemSimple{}
+	sellerIDs := []int64{}
+	sellerMap := map[int64]UserSimple{}
+
 	for _, item := range items {
-		seller, err := getUserSimpleByID(dbx, item.SellerID)
+		sellerIDs = append(sellerIDs, item.SellerID)
+	}
+
+	if len(sellerIDs) > 0 {
+		sellers, err := getUserSimplesByIDs(dbx, sellerIDs)
 		if err != nil {
 			outputErrorMsg(w, http.StatusNotFound, "seller not found")
 			return
 		}
+		for _, seller := range sellers {
+			sellerMap[seller.ID] = seller
+		}
+	}
+
+	for _, item := range items {
 		category, err := getCategoryByID(dbx, item.CategoryID)
 		if err != nil {
 			outputErrorMsg(w, http.StatusNotFound, "category not found")
 			return
 		}
+		seller := sellerMap[item.SellerID]
 		itemSimples = append(itemSimples, ItemSimple{
 			ID:         item.ID,
 			SellerID:   item.SellerID,
