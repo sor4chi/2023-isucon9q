@@ -284,7 +284,6 @@ var holeCategoryMap = map[int]Category{}
 var holeCategoryMapLock = sync.RWMutex{}
 
 func main() {
-	APIShipmentStatusCache = map[string]string{}
 	holeCategoryMap = map[int]Category{}
 	runtime.SetBlockProfileRate(1)
 	runtime.SetMutexProfileFraction(1)
@@ -525,7 +524,6 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func postInitialize(w http.ResponseWriter, r *http.Request) {
-	APIShipmentStatusCache = map[string]string{}
 	holeCategoryMap = map[int]Category{}
 	ri := reqInitialize{}
 
@@ -957,8 +955,6 @@ func getUserItems(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rui)
 }
 
-var APIShipmentStatusCache = map[string]string{}
-
 func getTransactions(w http.ResponseWriter, r *http.Request) {
 
 	user, errCode, errMsg := getUser(r)
@@ -1161,25 +1157,14 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 				tx.Rollback()
 				return
 			}
-			if v, ok := APIShipmentStatusCache[shipping.ReserveID]; ok {
-				itemDetail.ShippingStatus = v
-			} else {
-				ssr, err := APIShipmentStatus(getShipmentServiceURL(), &APIShipmentStatusReq{
-					ReserveID: shipping.ReserveID,
-				})
-				if err != nil {
-					log.Print(err)
-					outputErrorMsg(w, http.StatusInternalServerError, "failed to request to shipment service")
-					tx.Rollback()
-					return
-				}
-
-				itemDetail.ShippingStatus = ssr.Status
-
-				if ssr.Status == ShippingsStatusDone {
-					APIShipmentStatusCache[shipping.ReserveID] = ssr.Status
-				}
+			shippingsStatus, err := getShippingsStatus(tx, shipping.ReserveID)
+			if err != nil {
+				log.Print(err)
+				outputErrorMsg(w, http.StatusInternalServerError, "db error")
+				tx.Rollback()
+				return
 			}
+			itemDetail.ShippingStatus = shippingsStatus
 			itemDetail.TransactionEvidenceID = transactionEvidence.ID
 			itemDetail.TransactionEvidenceStatus = transactionEvidence.Status
 		}
@@ -1202,6 +1187,12 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	json.NewEncoder(w).Encode(rts)
 
+}
+
+func getShippingsStatus(db *sqlx.Tx, reserveID string) (string, error) {
+	var status string
+	err := db.Get(&status, "SELECT `status` FROM `shippings` WHERE `reserve_id` = ?", reserveID)
+	return status, err
 }
 
 func getItem(w http.ResponseWriter, r *http.Request) {
