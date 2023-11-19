@@ -1,5 +1,10 @@
 matching_groups:
-  - /hoge
+  - /users/transaction\.json
+  - /users/.+\.json
+  - /upload/.+\.jpg
+  - /items/.+\.json
+  - /transactions/.+\.png
+  - /static/*
 sort: avg
 reverse: true
 metrics:
