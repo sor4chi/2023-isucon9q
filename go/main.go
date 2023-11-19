@@ -446,6 +446,38 @@ func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err err
 	return category, err
 }
 
+func getCategoriesByIDs(q sqlx.Queryer, categoryIDs []int) (categories []Category, err error) {
+	categories = []Category{}
+	sql, params, err := sqlx.In("SELECT * FROM `categories` WHERE `id` IN (?)", categoryIDs)
+	if err != nil {
+		return categories, err
+	}
+	err = sqlx.Select(q, &categories, sql, params...)
+	if err != nil {
+		return categories, err
+	}
+	parentIDs := []int{}
+	for _, category := range categories {
+		if category.ParentID != 0 {
+			parentIDs = append(parentIDs, category.ParentID)
+		}
+	}
+	parentCategories, err := getCategoriesByIDs(q, parentIDs)
+	if err != nil {
+		return categories, err
+	}
+	parentCategoryMap := map[int]Category{}
+	for _, parentCategory := range parentCategories {
+		parentCategoryMap[parentCategory.ID] = parentCategory
+	}
+	for i, category := range categories {
+		if category.ParentID != 0 {
+			categories[i].ParentCategoryName = parentCategoryMap[category.ParentID].CategoryName
+		}
+	}
+	return categories, err
+}
+
 func getConfigByName(name string) (string, error) {
 	config := Config{}
 	err := dbx.Get(&config, "SELECT * FROM `configs` WHERE `name` = ?", name)
@@ -714,10 +746,13 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 
 	itemSimples := []ItemSimple{}
 	sellerIDs := []int64{}
+	categoryIDs = []int{}
 	sellerMap := map[int64]UserSimple{}
+	categoryMap := map[int]Category{}
 
 	for _, item := range items {
 		sellerIDs = append(sellerIDs, item.SellerID)
+		categoryIDs = append(categoryIDs, item.CategoryID)
 	}
 
 	if len(sellerIDs) > 0 {
@@ -731,13 +766,20 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for _, item := range items {
-		category, err := getCategoryByID(dbx, item.CategoryID)
+	if len(categoryIDs) > 0 {
+		categories, err := getCategoriesByIDs(dbx, categoryIDs)
 		if err != nil {
 			outputErrorMsg(w, http.StatusNotFound, "category not found")
 			return
 		}
+		for _, category := range categories {
+			categoryMap[category.ID] = category
+		}
+	}
+
+	for _, item := range items {
 		seller := sellerMap[item.SellerID]
+		category := categoryMap[item.CategoryID]
 		itemSimples = append(itemSimples, ItemSimple{
 			ID:         item.ID,
 			SellerID:   item.SellerID,
